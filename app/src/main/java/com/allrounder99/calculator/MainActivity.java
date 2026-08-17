@@ -8,6 +8,9 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 import android.view.View;
+import android.webkit.JavascriptInterface;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 
 public class MainActivity extends Activity {
     private WebView webView;
@@ -20,6 +23,7 @@ public class MainActivity extends Activity {
         webView.setVerticalScrollBarEnabled(false);
         webView.setHorizontalScrollBarEnabled(false);
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        webView.addJavascriptInterface(new HapticBridge(), "A99Haptics");
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -28,6 +32,17 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient());
         webView.setWebChromeClient(new WebChromeClient());
         webView.loadUrl("file:///android_asset/index.html");
+    }
+    private class HapticBridge {
+        @JavascriptInterface public void tap() {
+            runOnUiThread(() -> {
+                Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+                if (v != null && v.hasVibrator()) {
+                    if (android.os.Build.VERSION.SDK_INT >= 26) v.vibrate(VibrationEffect.createOneShot(14, 90));
+                    else v.vibrate(14);
+                }
+            });
+        }
     }
     @Override public void onBackPressed() {
         webView.evaluateJavascript("window.appBack ? window.appBack() : false", handled -> {
