@@ -1,0 +1,19 @@
+html{height:100%;overscroll-behavior:none}
+body{min-height:100%;overflow-x:hidden;overscroll-behavior:none;touch-action:pan-y}
+.app{min-height:100dvh;padding-bottom:calc(82px + env(safe-area-inset-bottom))}
+header{height:calc(76px + env(safe-area-inset-top));padding:calc(12px + env(safe-area-inset-top)) 18px 12px;background:color-mix(in srgb,var(--bg) 90%,transparent)}
+.page.active{animation:appearV2 .34s cubic-bezier(.2,.8,.2,1)}
+.page.active.slide-left{animation:slideLeft .3s cubic-bezier(.2,.8,.2,1)}
+.page.active.slide-right{animation:slideRight .3s cubic-bezier(.2,.8,.2,1)}
+@keyframes appearV2{from{opacity:.25;transform:translateY(8px)}}
+@keyframes slideLeft{from{opacity:.3;transform:translateX(34px)}}
+@keyframes slideRight{from{opacity:.3;transform:translateX(-34px)}}
+.tool-page{padding-top:14px}
+.calc-display{height:clamp(148px,22dvh,230px);border-radius:28px;padding:24px;box-shadow:inset 0 1px 0 #ffffff0b}
+.keys{gap:clamp(8px,1.5vw,12px);margin-top:12px}
+.keys button,.sci-keys button{height:clamp(62px,9.2dvh,82px);border-radius:999px;font-size:clamp(22px,6vw,30px);background:linear-gradient(145deg,var(--card),var(--surface));box-shadow:0 7px 15px #0003;transition:transform .09s ease,filter .09s ease}
+.keys button:active,.sci-keys button:active,.tool-grid>button:active{transform:scale(.94);filter:brightness(1.18)}
+.keys .op,.keys .equals{box-shadow:0 9px 22px #00a8ef38}
+nav{height:calc(74px + env(safe-area-inset-bottom));padding:7px 20px max(7px,env(safe-area-inset-bottom))}
+@media(max-height:760px){.tool-page:before{font-size:21px;margin-bottom:12px}.calc-display{height:125px}.calc-tabs{margin:8px 0}.keys button{height:58px}.keys{margin-top:8px}.sci-keys button{height:38px}}
+@media(max-width:360px){.keys{gap:7px}.keys button{height:60px}}
