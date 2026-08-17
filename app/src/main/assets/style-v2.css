@@ -39,3 +39,9 @@ header,nav{backdrop-filter:none!important;-webkit-backdrop-filter:none!important
 #calculator .calc-display output.size-md{font-size:38px}
 #calculator .calc-display output.size-sm{font-size:29px}
 #calculator .calc-display output.size-xs{font-size:22px}
+body.calc-locked{position:fixed;inset:0;width:100%;height:100dvh;overflow:hidden;overscroll-behavior:none}
+body.calc-locked .app{height:100dvh;overflow:hidden}
+#calculator{overscroll-behavior:none;touch-action:none;contain:layout paint}
+#calculator button{touch-action:manipulation}
+#calculator .keys button{background:var(--card);transition:transform .06s ease}
+#calculator .keys .op,#calculator .keys .equals{background:var(--accent2)}
