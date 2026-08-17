@@ -47,9 +47,11 @@ header,nav{backdrop-filter:none!important;-webkit-backdrop-filter:none!important
 #calculator .calc-display output.size-xxs{font-size:17px;letter-spacing:-.02em}
 body.calc-locked{position:fixed;inset:0;width:100%;height:100dvh;overflow:hidden;overscroll-behavior:none}
 body.calc-locked .app{height:100dvh;overflow:hidden}
-#calculator{overscroll-behavior:none;touch-action:none;contain:layout paint}
+#calculator{overscroll-behavior:none;touch-action:pan-x;contain:layout paint}
 #calculator button{touch-action:manipulation}
-#calculator .keys button{background:var(--card);transition:transform .035s linear,filter .035s linear;-webkit-tap-highlight-color:transparent}
+#calculator .keys button{background:var(--card);transition:transform .02s linear,filter .02s linear;-webkit-tap-highlight-color:transparent}
 #calculator .keys .op,#calculator .keys .equals{background:var(--accent2)}
 button{user-select:none;-webkit-user-select:none}
-#calculator .keys button:active{transform:scale(.91);filter:brightness(1.28)}
+#calculator .keys button:active{transform:scale(.96);filter:brightness(1.16)}
+#calculator .calc-display{touch-action:pan-x;overscroll-behavior-x:contain}
+#calculator .calc-display output{cursor:grab;-webkit-overflow-scrolling:touch}

@@ -9,8 +9,7 @@ import android.webkit.WebViewClient;
 import android.widget.Toast;
 import android.view.View;
 import android.webkit.JavascriptInterface;
-import android.os.VibrationEffect;
-import android.os.Vibrator;
+import android.view.HapticFeedbackConstants;
 
 public class MainActivity extends Activity {
     private WebView webView;
@@ -35,13 +34,7 @@ public class MainActivity extends Activity {
     }
     private class HapticBridge {
         @JavascriptInterface public void tap() {
-            runOnUiThread(() -> {
-                Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
-                if (v != null && v.hasVibrator()) {
-                    if (android.os.Build.VERSION.SDK_INT >= 26) v.vibrate(VibrationEffect.createOneShot(14, 90));
-                    else v.vibrate(14);
-                }
-            });
+            runOnUiThread(() -> webView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP));
         }
     }
     @Override public void onBackPressed() {

@@ -9,7 +9,7 @@ function openPage(id,direction=0){const target=$('#'+id);if(!target||id===curren
 $$('[data-open]').forEach(b=>b.onclick=()=>{const from=pageOrder.indexOf(currentPage),to=pageOrder.indexOf(b.dataset.open);openPage(b.dataset.open,to>=0&&from>=0?Math.sign(to-from):1)});
 let touchX=0,touchY=0,edgeSwipe=false;document.addEventListener('touchstart',e=>{const t=e.changedTouches[0];touchX=t.screenX;touchY=t.screenY;edgeSwipe=!e.target.closest('button,input,label')&&(touchX<28||touchX>innerWidth-28)},{passive:true});document.addEventListener('touchend',e=>{if(!edgeSwipe)return;edgeSwipe=false;let dx=e.changedTouches[0].screenX-touchX,dy=e.changedTouches[0].screenY-touchY;if(Math.abs(dx)<70||Math.abs(dx)<Math.abs(dy)*1.5)return;let i=pageOrder.indexOf(currentPage);if(i<0){if(dx>0)openPage('home',-1);return}let next=dx<0?i+1:i-1;if(next>=0&&next<pageOrder.length)openPage(pageOrder[next],dx<0?1:-1)},{passive:true});
 window.appBack=()=>{if(currentPage!=='home'){openPage('home',-1);return true}return false};
-document.addEventListener('touchmove',e=>{if(currentPage==='calculator')e.preventDefault()},{passive:false});
+document.addEventListener('touchmove',e=>{if(currentPage==='calculator'&&!e.target.closest('.calc-display'))e.preventDefault()},{passive:false});
 const savedTheme=localStorage.getItem('a99-theme')||'dark';document.body.dataset.theme=savedTheme;$('#themeBtn').textContent=savedTheme==='dark'?'☀':'☾';$('#themeBtn').onclick=()=>{let t=document.body.dataset.theme==='dark'?'light':'dark';document.body.dataset.theme=t;localStorage.setItem('a99-theme',t);$('#themeBtn').textContent=t==='dark'?'☀':'☾'};
 $$('[data-mode]').forEach(b=>b.onclick=()=>{$$('[data-mode]').forEach(x=>x.classList.remove('active'));b.classList.add('active');$('#scientificKeys').classList.toggle('hidden',b.dataset.mode!=='scientific')});
 function fitText(el,text){el.textContent=text;el.classList.remove('size-md','size-sm','size-xs','size-xxs');if(text.length>70)el.classList.add('size-xxs');else if(text.length>42)el.classList.add('size-xs');else if(text.length>24)el.classList.add('size-sm');else if(text.length>14)el.classList.add('size-md');requestAnimationFrame(()=>{el.scrollLeft=el.scrollWidth})}
@@ -22,7 +22,18 @@ const MAX_DIGITS=100,MAX_EXPRESSION=220;
 function pressKey(k){if(expr.length>=MAX_EXPRESSION&&!isOperator(k)){notify('Maximum expression length reached');return}if(/^\d$/.test(k)&&expr.replace(/\D/g,'').length>=MAX_DIGITS){notify('Maximum 100 digits');return}if(k==='.'&&currentNumber().includes('.')){notify('Decimal already added');return}if(isOperator(k)){if(!expr&&k!=='−')return;if(/[+−×÷^]$/.test(expr))expr=expr.slice(0,-1)+k;else expr+=k}else expr+=k;update()}
 function runAction(a){if(a==='clear'){expr='';update();return}if(a==='back'){expr=expr.slice(0,-1);update();return}if(a==='sign'){expr=expr?`-(${expr})`:'-';update();return}if(a==='equals'){try{expr=expr.replace(/[+−×÷^]+$/,'');if(!expr)return;let old=expr,r=evaluate(expr);if(typeof r==='bigint')expr=r.toString();else{if(!Number.isFinite(r))throw 0;expr=String(+r.toPrecision(15))}update();$('#expression').textContent=old+' =';saveHistory('Calculator',old,expr)}catch{$('#expression').textContent='Invalid expression'}}}
 function haptic(){try{if(window.A99Haptics)A99Haptics.tap()}catch{}}
-$$('#calculator [data-key],#calculator [data-action]').forEach(b=>{b.onclick=null;b.addEventListener('pointerdown',e=>{e.preventDefault();haptic();if(b.dataset.key!==undefined)pressKey(b.dataset.key);else runAction(b.dataset.action)},{passive:false})});
+function activateButton(b){haptic();if(b.dataset.key!==undefined)pressKey(b.dataset.key);else runAction(b.dataset.action)}
+$$('#calculator [data-key],#calculator [data-action]').forEach(b=>{
+  b.onclick=null;let touched=false;
+  b.addEventListener('touchstart',e=>{e.preventDefault();touched=true;activateButton(b)},{passive:false});
+  b.addEventListener('mousedown',e=>{if(touched){touched=false;return}e.preventDefault();activateButton(b)});
+});
+const backKey=$('#calculator [data-action=back]');let deleteDelay=0,deleteRepeat=0;
+function stopDelete(){clearTimeout(deleteDelay);clearInterval(deleteRepeat);deleteDelay=deleteRepeat=0}
+backKey.addEventListener('touchstart',()=>{stopDelete();deleteDelay=setTimeout(()=>{deleteRepeat=setInterval(()=>{if(!expr)return stopDelete();expr=expr.slice(0,-1);update()},48)},290)},{passive:true});
+backKey.addEventListener('mousedown',()=>{stopDelete();deleteDelay=setTimeout(()=>{deleteRepeat=setInterval(()=>{if(!expr)return stopDelete();expr=expr.slice(0,-1);update()},48)},290)});
+['touchend','touchcancel','mouseup','mouseleave'].forEach(n=>backKey.addEventListener(n,stopDelete));
+backKey.addEventListener('contextmenu',e=>e.preventDefault());
 $$('input[type=number]').forEach(i=>i.addEventListener('input',()=>{if(i.value.replace(/\D/g,'').length>100){i.value=i.value.slice(0,-1);i.setCustomValidity('Maximum 100 digits allowed');notify('Maximum 100 digits allowed')}else i.setCustomValidity('')}));
 document.addEventListener('pointerdown',e=>{if(e.target.closest('button')&&!e.target.closest('#calculator'))haptic()},{passive:true});
 $$('[data-gstmode]').forEach(b=>b.onclick=()=>{$$('[data-gstmode]').forEach(x=>x.classList.remove('active'));b.classList.add('active');gstMode=b.dataset.gstmode});$$('#gstRates button').forEach(b=>b.onclick=()=>{$$('#gstRates button').forEach(x=>x.classList.remove('active'));b.classList.add('active')});
