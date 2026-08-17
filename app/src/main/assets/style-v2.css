@@ -30,3 +30,12 @@ nav{height:calc(74px + env(safe-area-inset-bottom));padding:7px 20px max(7px,env
 #calculator .calc-display output{font-size:clamp(34px,10vw,50px)}
 @media(max-height:700px){#calculator.active{padding-top:4px}#calculator .calc-display{flex-basis:18%;min-height:82px}#calculator .calc-tabs{flex-basis:42px;margin:5px 0}#calculator .keys{gap:5px}}
 .app-toast{position:fixed;z-index:80;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(15px);background:#07131d;color:#fff;border:1px solid var(--accent);border-radius:999px;padding:11px 18px;font-weight:700;font-size:13px;opacity:0;pointer-events:none;transition:.2s;white-space:nowrap}.app-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* Performance mode: preserve the design without costly blur/repaint effects. */
+header,nav{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+.keys button,.sci-keys button,.tool-grid>button{box-shadow:none!important}
+.page.active,.page.active.slide-left,.page.active.slide-right{animation-duration:.16s}
+#calculator .calc-display output{display:block;width:100%;max-width:100%;text-align:right;overflow:hidden;line-height:1.08;will-change:contents}
+#calculator .calc-display output.size-md{font-size:38px}
+#calculator .calc-display output.size-sm{font-size:29px}
+#calculator .calc-display output.size-xs{font-size:22px}
