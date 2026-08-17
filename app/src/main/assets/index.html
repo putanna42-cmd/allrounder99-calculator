@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#061725">
+  <title>Allrounder99 Calculator</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-theme="dark">
+  <div id="splash"><img src="icons/icon-512.png" alt="A99"><h1>Allrounder99</h1><p>CALCULATOR</p></div>
+  <div class="app">
+    <header><div class="brand"><img src="icons/icon-192.png" alt="A99"><div><b>Allrounder99</b><small>Calculator</small></div></div><button class="icon-btn" id="themeBtn" aria-label="Switch theme">☀</button></header>
+    <main>
+      <section id="home" class="page active">
+        <div class="hero"><small>SMART FINANCE SUITE</small><h1>Calculate anything.</h1><p>Fast, accurate and made for everyday business.</p></div>
+        <div class="tool-grid">
+          <button data-open="calculator"><i>⌗</i><span>Calculator</span><small>Basic & scientific</small></button>
+          <button data-open="gst"><i>₹</i><span>GST</span><small>Add or remove tax</small></button>
+          <button data-open="emi"><i>▥</i><span>EMI & Loan</span><small>Monthly repayment</small></button>
+          <button data-open="profit"><i>↗</i><span>Profit</span><small>Margin & markup</small></button>
+          <button data-open="discount"><i>%</i><span>Discount</span><small>Final sale price</small></button>
+          <button data-open="interest"><i>◴</i><span>Interest</span><small>Simple & compound</small></button>
+          <button data-open="commission"><i>◆</i><span>Commission</span><small>Earnings & rate</small></button>
+          <button data-open="currency"><i>⇄</i><span>Currency</span><small>Manual live-rate input</small></button>
+        </div>
+      </section>
+
+      <section id="calculator" class="page tool-page" data-title="Calculator">
+        <div class="calc-display"><small id="expression">Ready</small><output id="display">0</output></div>
+        <div class="calc-tabs"><button class="active" data-mode="basic">Basic</button><button data-mode="scientific">Scientific</button></div>
+        <div id="scientificKeys" class="sci-keys hidden">
+          <button data-key="sin(">sin</button><button data-key="cos(">cos</button><button data-key="tan(">tan</button><button data-key="sqrt(">√</button><button data-key="log(">log</button>
+          <button data-key="pi">π</button><button data-key="(">(</button><button data-key=")">)</button><button data-key="^">xʸ</button><button data-key="!">x!</button>
+        </div>
+        <div class="keys">
+          <button data-action="clear" class="soft">AC</button><button data-action="back" class="soft">⌫</button><button data-key="%" class="soft">%</button><button data-key="÷" class="op">÷</button>
+          <button data-key="7">7</button><button data-key="8">8</button><button data-key="9">9</button><button data-key="×" class="op">×</button>
+          <button data-key="4">4</button><button data-key="5">5</button><button data-key="6">6</button><button data-key="−" class="op">−</button>
+          <button data-key="1">1</button><button data-key="2">2</button><button data-key="3">3</button><button data-key="+" class="op">+</button>
+          <button data-action="sign">±</button><button data-key="0">0</button><button data-key=".">.</button><button data-action="equals" class="equals">=</button>
+        </div>
+      </section>
+
+      <section id="gst" class="page tool-page" data-title="GST Calculator">
+        <div class="segmented"><button class="active" data-gstmode="add">Add GST</button><button data-gstmode="remove">Remove GST</button></div>
+        <label>Amount (₹)<input id="gstAmount" type="number" inputmode="decimal" placeholder="e.g. 10000"></label>
+        <label>GST rate<div class="chips" id="gstRates"><button>5</button><button>12</button><button class="active">18</button><button>28</button></div></label>
+        <button class="primary" data-calc="gst">Calculate GST</button><div class="result" id="gstResult"></div>
+      </section>
+
+      <section id="emi" class="page tool-page" data-title="EMI & Loan">
+        <label>Loan amount (₹)<input id="loanAmount" type="number" inputmode="decimal" placeholder="e.g. 500000"></label>
+        <label>Annual interest (%)<input id="loanRate" type="number" inputmode="decimal" placeholder="e.g. 10.5"></label>
+        <label>Tenure (months)<input id="loanMonths" type="number" inputmode="numeric" placeholder="e.g. 36"></label>
+        <button class="primary" data-calc="emi">Calculate EMI</button><div class="result" id="emiResult"></div>
+      </section>
+
+      <section id="profit" class="page tool-page" data-title="Profit & Margin">
+        <label>Cost price (₹)<input id="costPrice" type="number" inputmode="decimal" placeholder="e.g. 800"></label>
+        <label>Selling price (₹)<input id="sellPrice" type="number" inputmode="decimal" placeholder="e.g. 1000"></label>
+        <button class="primary" data-calc="profit">Calculate Profit</button><div class="result" id="profitResult"></div>
+      </section>
+
+      <section id="discount" class="page tool-page" data-title="Discount">
+        <label>Original price (₹)<input id="originalPrice" type="number" inputmode="decimal" placeholder="e.g. 2499"></label>
+        <label>Discount (%)<input id="discountRate" type="number" inputmode="decimal" placeholder="e.g. 20"></label>
+        <button class="primary" data-calc="discount">Calculate Discount</button><div class="result" id="discountResult"></div>
+      </section>
+
+      <section id="interest" class="page tool-page" data-title="Interest">
+        <div class="segmented"><button class="active" data-interest="simple">Simple</button><button data-interest="compound">Compound</button></div>
+        <label>Principal (₹)<input id="principal" type="number" inputmode="decimal" placeholder="e.g. 100000"></label>
+        <label>Annual rate (%)<input id="interestRate" type="number" inputmode="decimal" placeholder="e.g. 8"></label>
+        <label>Time (years)<input id="interestYears" type="number" inputmode="decimal" placeholder="e.g. 5"></label>
+        <button class="primary" data-calc="interest">Calculate Interest</button><div class="result" id="interestResult"></div>
+      </section>
+
+      <section id="commission" class="page tool-page" data-title="Commission">
+        <label>Total sales (₹)<input id="salesAmount" type="number" inputmode="decimal" placeholder="e.g. 100000"></label>
+        <label>Commission rate (%)<input id="commissionRate" type="number" inputmode="decimal" placeholder="e.g. 5"></label>
+        <button class="primary" data-calc="commission">Calculate Commission</button><div class="result" id="commissionResult"></div>
+      </section>
+
+      <section id="currency" class="page tool-page" data-title="Currency Converter">
+        <label>Amount<input id="currencyAmount" type="number" inputmode="decimal" placeholder="e.g. 100"></label>
+        <label>Conversion rate<input id="currencyRate" type="number" inputmode="decimal" placeholder="1 source = ? target"></label>
+        <button class="primary" data-calc="currency">Convert</button><div class="result" id="currencyResult"></div>
+        <p class="note">Enter the latest exchange rate for accurate offline conversion.</p>
+      </section>
+
+      <section id="history" class="page tool-page" data-title="History"><div id="historyList" class="history-list"></div><button class="danger" id="clearHistory">Clear history</button></section>
+    </main>
+    <nav><button data-open="home" class="active"><i>⌂</i><span>Home</span></button><button data-open="calculator"><i>⌗</i><span>Calculator</span></button><button data-open="history"><i>◷</i><span>History</span></button></nav>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
