@@ -31,6 +31,7 @@ final class NativeCalculatorView extends View {
     private RectF displayRect = new RectF();
     private float density, downX, downY, lastX, displayOffset, historyOffset;
     private boolean draggingDisplay, draggingHistory;
+    private boolean moved, deleteRepeated;
     private Hit pressed;
     private Runnable repeatDelete;
 
@@ -73,15 +74,16 @@ final class NativeCalculatorView extends View {
 
     private void drawHome(Canvas c) {
         float top = dp(105), side = dp(18), gap = dp(11);
-        text(c, "Business & Everyday Tools", side, top, dp(27), text(), Paint.Align.LEFT, true);
-        text(c, "Fast native calculations — fully offline", side, top + dp(28), dp(14), muted(), Paint.Align.LEFT, false);
+        text(c, "SMART FINANCE SUITE", side, top, dp(11), accent(), Paint.Align.LEFT, true);
+        text(c, "Calculate anything.", side, top + dp(36), dp(31), text(), Paint.Align.LEFT, true);
+        text(c, "Fast, accurate and made for everyday business.", side, top + dp(62), dp(13), muted(), Paint.Align.LEFT, false);
         String[][] tools = {
-                {"▦", "Calculator", "Basic & scientific", "calculator"}, {"%", "GST", "Add or remove tax", "GST"},
-                {"₹", "EMI & Loan", "Monthly instalment", "EMI"}, {"↗", "Profit", "Margin & markup", "Profit"},
-                {"−", "Discount", "Price after discount", "Discount"}, {"◷", "Interest", "Simple & compound", "Interest"},
-                {"₹", "Commission", "Sales commission", "Commission"}, {"⇄", "Currency", "Offline conversion", "Currency"}
+                {"⌗", "Calculator", "Basic & scientific", "calculator"}, {"₹", "GST", "Add or remove tax", "GST"},
+                {"▥", "EMI & Loan", "Monthly repayment", "EMI"}, {"↗", "Profit", "Margin & markup", "Profit"},
+                {"%", "Discount", "Final sale price", "Discount"}, {"◴", "Interest", "Simple & compound", "Interest"},
+                {"◆", "Commission", "Earnings & rate", "Commission"}, {"⇄", "Currency", "Manual live-rate input", "Currency"}
         };
-        float y = top + dp(50), cardW = (getWidth() - side * 2 - gap) / 2f;
+        float y = top + dp(82), cardW = (getWidth() - side * 2 - gap) / 2f;
         float bottom = getHeight() - dp(80), cardH = Math.min(dp(116), (bottom - y - gap * 3) / 4f);
         for (int i = 0; i < tools.length; i++) {
             int row = i / 2, col = i % 2;
@@ -188,18 +190,24 @@ final class NativeCalculatorView extends View {
     @Override public boolean onTouchEvent(MotionEvent e) {
         float x=e.getX(),y=e.getY();
         if(e.getAction()==MotionEvent.ACTION_DOWN){
-            downX=lastX=x;downY=y;draggingDisplay=page==PAGE_CALCULATOR&&displayRect.contains(x,y);draggingHistory=page==PAGE_HISTORY;
+            downX=lastX=x;downY=y;moved=false;deleteRepeated=false;draggingDisplay=page==PAGE_CALCULATOR&&displayRect.contains(x,y);draggingHistory=page==PAGE_HISTORY;
             pressed=findHit(x,y);
-            if(pressed!=null){performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);activate(pressed);if(pressed.type.equals("action")&&pressed.value.equals("back"))startDeleteRepeat();}
+            if(pressed!=null&&pressed.type.equals("action")&&pressed.value.equals("back"))startDeleteRepeat();
             return true;
         }
         if(e.getAction()==MotionEvent.ACTION_MOVE){
             float dx=x-lastX;
+            if(Math.abs(x-downX)>dp(8)||Math.abs(y-downY)>dp(8))moved=true;
             if(draggingDisplay){displayOffset+=dx;invalidate();}
             else if(draggingHistory){historyOffset=Math.max(0,historyOffset-(y-downY));downY=y;invalidate();}
             lastX=x;return true;
         }
-        if(e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL){stopDeleteRepeat();pressed=null;draggingDisplay=draggingHistory=false;return true;}
+        if(e.getAction()==MotionEvent.ACTION_UP){
+            Hit released=findHit(x,y);stopDeleteRepeat();
+            if(!moved&&pressed!=null&&released==pressed&&!deleteRepeated){performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);activate(pressed);}
+            pressed=null;draggingDisplay=draggingHistory=false;return true;
+        }
+        if(e.getAction()==MotionEvent.ACTION_CANCEL){stopDeleteRepeat();pressed=null;draggingDisplay=draggingHistory=false;return true;}
         return true;
     }
 
@@ -238,7 +246,7 @@ final class NativeCalculatorView extends View {
     }
 
     private void deleteOne(){if(!expression.isEmpty())expression=expression.substring(0,expression.length()-1);status=expression.isEmpty()?"Ready":"Expression";displayOffset=0;invalidate();}
-    private void startDeleteRepeat(){stopDeleteRepeat();repeatDelete=new Runnable(){public void run(){if(pressed!=null&&!expression.isEmpty()){deleteOne();handler.postDelayed(this,45);}}};handler.postDelayed(repeatDelete,300);}
+    private void startDeleteRepeat(){stopDeleteRepeat();repeatDelete=new Runnable(){public void run(){if(pressed!=null&&!expression.isEmpty()){deleteRepeated=true;performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);deleteOne();handler.postDelayed(this,55);}}};handler.postDelayed(repeatDelete,360);}
     private void stopDeleteRepeat(){if(repeatDelete!=null)handler.removeCallbacks(repeatDelete);repeatDelete=null;}
     private int digits(){int n=0;for(int i=0;i<expression.length();i++)if(Character.isDigit(expression.charAt(i)))n++;return n;}
     private String currentNumber(){int i=expression.length()-1;while(i>=0&&(Character.isDigit(expression.charAt(i))||expression.charAt(i)=='.'))i--;return expression.substring(i+1);}
