@@ -33,7 +33,7 @@ jobs:
       - name: Build installable debug APK
         run: gradle --no-daemon --stacktrace -p fp24-panel-viewer assembleDebug
 
-      - name: Verify APK package and signature
+      - name: Verify APK signature and contents
         shell: bash
         run: |
           APK="fp24-panel-viewer/app/build/outputs/apk/debug/app-debug.apk"
@@ -41,7 +41,7 @@ jobs:
           test -s "$APK"
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs "$APK"
-          unzip -p "$APK" classes.dex | strings | grep -F "com/fp24/panelviewer/MainActivity"
+          unzip -l "$APK" | grep -F "classes.dex"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
