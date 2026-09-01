@@ -33,6 +33,16 @@ jobs:
       - name: Build installable debug APK
         run: gradle --no-daemon --stacktrace -p fp24-panel-viewer assembleDebug
 
+      - name: Verify APK package and signature
+        shell: bash
+        run: |
+          APK="fp24-panel-viewer/app/build/outputs/apk/debug/app-debug.apk"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -s "$APK"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          unzip -p "$APK" classes.dex | strings | grep -F "com/fp24/panelviewer/MainActivity"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
