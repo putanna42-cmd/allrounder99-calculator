@@ -7,13 +7,15 @@ A personal-use Android WebView wrapper for `https://panel.freeplay24.com/login`.
 - Panel login remains inside Android WebView cookies.
 - Navigation is restricted to `panel.freeplay24.com`; external HTTPS links open in the phone browser.
 - Cleartext HTTP and invalid SSL pages are blocked.
-- The app converts matching Laravel/toastr and new-row events into private Android notifications.
+- The app listens for the panel's exact `.DepositAdded` and `.WithdrawAdded` Laravel Echo events.
+- Two private background WebViews keep the Deposit and Withdraw event pages active after login.
+- Pull down from the top of the panel to refresh; there is no extra app toolbar or refresh button.
 - Notifications intentionally omit usernames, amounts, account numbers, and UTR values.
-- A **Bell** button sends a safe test notification; **Refresh** reloads the panel.
+- A one-time “notifications active” message confirms Android notification permission.
 
 ## Important limitation
 
-The panel does not expose an official push API or Firebase configuration to this app. Alerts work while the WebView is active and may continue briefly while the app remains alive in Recent Apps. They are not guaranteed after force-close, phone restart, Android battery suspension, session expiry, or a panel-side UI/event change.
+The panel does not expose an official push API or Firebase configuration to this app. A low-priority foreground-service notification keeps live monitoring active after login. Transaction alerts are still not guaranteed after force-stop, session expiry, Android terminating the service, the platform foreground-service time limit, or a panel-side event change.
 
 Reliable always-on background alerts require an official FreePlay24 webhook/API connected to a push backend such as Firebase Cloud Messaging.
 
