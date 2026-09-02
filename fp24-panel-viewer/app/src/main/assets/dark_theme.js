@@ -110,8 +110,13 @@
         }
 
         .nav-link, .navbar-nav .nav-link, .brand-text, .card-title,
-        .modal-title, h1, h2, h3, h4, h5, h6, label, p, span,
+        .modal-title, h1, h2, h3, h4, h5, h6, label,
         .breadcrumb-item, .dropdown-item, .text-dark {
+            color: var(--fp24-text) !important;
+        }
+
+        .card p, .card span, .info-box span, .small-box p, .small-box span,
+        .login-box p, .login-box span, .register-box p, .register-box span {
             color: var(--fp24-text) !important;
         }
 

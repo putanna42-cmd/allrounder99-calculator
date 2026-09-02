@@ -16,6 +16,7 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -27,10 +28,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 public final class MonitorService extends Service {
     private static final String ACTION_START = "com.fp24.panelviewer.START_MONITORING";
@@ -41,44 +38,44 @@ public final class MonitorService extends Service {
             "https://panel.freeplay24.com/withdrawals"
     };
     private static final long HEALTH_CHECK_MS = 20_000L;
-    private static final long STALE_BRIDGE_MS = 75_000L;
-    private static final long FULL_RECONNECT_MS = 180_000L;
+    private static final long STALE_BRIDGE_MS = 65_000L;
+    private static final long SNAPSHOT_SWITCH_MS = 90_000L;
 
-    private final List<WebView> monitorViews = new ArrayList<>();
-    private final Map<WebView, String> monitorTypes = new HashMap<>();
-    private final Map<WebView, Long> lastReloads = new HashMap<>();
-    private final Map<String, Long> lastHeartbeats = new HashMap<>();
     private final Handler handler = new Handler(Looper.getMainLooper());
 
-    private String bridgeScript;
+    private WebView monitorView;
+    private String bridgeScript = "";
+    private long lastHeartbeat;
+    private long lastNavigation;
+    private int activeUrlIndex;
+    private boolean shuttingDown;
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
 
     private final Runnable healthCheck = new Runnable() {
         @Override
         public void run() {
-            if (!hasInternet()) {
+            if (shuttingDown) {
+                return;
+            }
+            if (!hasInternet() || monitorView == null) {
                 handler.postDelayed(this, HEALTH_CHECK_MS);
                 return;
             }
 
             long now = System.currentTimeMillis();
-            for (WebView view : new ArrayList<>(monitorViews)) {
-                String type = monitorTypes.get(view);
-                long heartbeat = lastHeartbeats.containsKey(type)
-                        ? lastHeartbeats.get(type) : 0L;
-                long reload = lastReloads.containsKey(view) ? lastReloads.get(view) : 0L;
-
-                if (now - reload >= FULL_RECONNECT_MS || now - heartbeat >= STALE_BRIDGE_MS) {
-                    reloadMonitor(view);
-                    continue;
-                }
-
-                view.evaluateJavascript(
-                        "(function(){return !!window.__fp24BridgeHealthV3;})()",
+            if (now - lastNavigation >= SNAPSHOT_SWITCH_MS) {
+                activeUrlIndex = (activeUrlIndex + 1) % MONITOR_URLS.length;
+                loadActiveMonitorUrl();
+            } else if (now - lastHeartbeat >= STALE_BRIDGE_MS) {
+                reloadMonitor();
+            } else {
+                WebView current = monitorView;
+                current.evaluateJavascript(
+                        "(function(){return !!window.__fp24BridgeHealthV4;})()",
                         result -> {
-                            if (!"true".equals(result)) {
-                                injectBridge(view);
+                            if (current == monitorView && !"true".equals(result)) {
+                                injectBridge(current);
                             }
                         });
             }
@@ -121,9 +118,7 @@ public final class MonitorService extends Service {
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().flush();
-        for (String url : MONITOR_URLS) {
-            createMonitor(url);
-        }
+        createMonitor();
         registerNetworkCallback();
         handler.postDelayed(healthCheck, HEALTH_CHECK_MS);
     }
@@ -137,8 +132,11 @@ public final class MonitorService extends Service {
         return START_STICKY;
     }
 
-    private void createMonitor(String url) {
-        String type = url.contains("withdraw") ? "withdraw" : "deposit";
+    private void createMonitor() {
+        if (shuttingDown || monitorView != null) {
+            return;
+        }
+
         WebView monitor = new WebView(this);
         monitor.setBackgroundColor(0xFF05080D);
         WebSettings settings = monitor.getSettings();
@@ -147,18 +145,16 @@ public final class MonitorService extends Service {
         settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " FP24Monitor/3.0");
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            settings.setOffscreenPreRaster(true);
-        }
+        settings.setUserAgentString(settings.getUserAgentString() + " FP24Monitor/4.0");
 
         CookieManager.getInstance().setAcceptThirdPartyCookies(monitor, true);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             settings.setSafeBrowsingEnabled(true);
         }
 
-        monitor.addJavascriptInterface(new ServiceBridge(type), "PanelBridge");
+        monitor.addJavascriptInterface(new ServiceBridge(), "PanelBridge");
         monitor.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -178,6 +174,9 @@ public final class MonitorService extends Service {
             @Override
             public void onPageFinished(WebView view, String finishedUrl) {
                 super.onPageFinished(view, finishedUrl);
+                if (view != monitorView) {
+                    return;
+                }
                 Uri uri = Uri.parse(finishedUrl);
                 String path = uri.getPath() == null ? "" : uri.getPath().toLowerCase();
                 if (ALLOWED_HOST.equalsIgnoreCase(uri.getHost())
@@ -187,7 +186,8 @@ public final class MonitorService extends Service {
                     return;
                 }
                 NotificationHelper.clearSessionExpired(MonitorService.this);
-                lastReloads.put(view, System.currentTimeMillis());
+                lastNavigation = System.currentTimeMillis();
+                lastHeartbeat = lastNavigation;
                 injectBridge(view);
             }
 
@@ -196,31 +196,60 @@ public final class MonitorService extends Service {
                     WebView view, SslErrorHandler handler, SslError error) {
                 handler.cancel();
             }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                if (view == monitorView) {
+                    disposeMonitor();
+                    handler.postDelayed(MonitorService.this::createMonitor, 1200L);
+                }
+                return true;
+            }
         });
-        monitorViews.add(monitor);
-        monitorTypes.put(monitor, type);
-        lastReloads.put(monitor, System.currentTimeMillis());
-        lastHeartbeats.put(type, System.currentTimeMillis());
-        monitor.loadUrl(url);
+        monitorView = monitor;
+        loadActiveMonitorUrl();
     }
 
-    private void injectBridge(WebView view) {
-        if (bridgeScript == null || bridgeScript.isEmpty()) {
+    private void injectBridge(WebView target) {
+        if (target == null || bridgeScript == null || bridgeScript.isEmpty()) {
             return;
         }
-        view.evaluateJavascript(bridgeScript, null);
+        target.evaluateJavascript(bridgeScript, null);
     }
 
-    private void reloadMonitor(WebView view) {
-        if (view == null) {
+    private void loadActiveMonitorUrl() {
+        if (monitorView == null || shuttingDown) {
             return;
         }
-        lastReloads.put(view, System.currentTimeMillis());
-        String type = monitorTypes.get(view);
-        if (type != null) {
-            lastHeartbeats.put(type, System.currentTimeMillis());
+        long now = System.currentTimeMillis();
+        lastNavigation = now;
+        lastHeartbeat = now;
+        monitorView.loadUrl(MONITOR_URLS[activeUrlIndex]);
+    }
+
+    private void reloadMonitor() {
+        if (monitorView == null || shuttingDown) {
+            return;
         }
-        view.reload();
+        lastNavigation = System.currentTimeMillis();
+        lastHeartbeat = lastNavigation;
+        monitorView.reload();
+    }
+
+    private void disposeMonitor() {
+        WebView old = monitorView;
+        monitorView = null;
+        if (old == null) {
+            return;
+        }
+        try {
+            old.removeJavascriptInterface("PanelBridge");
+            old.stopLoading();
+            old.removeAllViews();
+            old.destroy();
+        } catch (RuntimeException ignored) {
+            // The renderer may already be gone.
+        }
     }
 
     private boolean hasInternet() {
@@ -247,8 +276,8 @@ public final class MonitorService extends Service {
             @Override
             public void onAvailable(Network network) {
                 handler.postDelayed(() -> {
-                    for (WebView view : new ArrayList<>(monitorViews)) {
-                        reloadMonitor(view);
+                    if (!shuttingDown && monitorView != null) {
+                        reloadMonitor();
                     }
                 }, 1500L);
             }
@@ -274,12 +303,6 @@ public final class MonitorService extends Service {
     }
 
     private final class ServiceBridge {
-        private final String pageType;
-
-        ServiceBridge(String pageType) {
-            this.pageType = pageType;
-        }
-
         @JavascriptInterface
         public void onEvent(String eventType, String eventId) {
             handler.post(() -> NotificationHelper.showRequestNotification(
@@ -294,7 +317,7 @@ public final class MonitorService extends Service {
 
         @JavascriptInterface
         public void onHeartbeat() {
-            handler.post(() -> lastHeartbeats.put(pageType, System.currentTimeMillis()));
+            handler.post(() -> lastHeartbeat = System.currentTimeMillis());
         }
     }
 
@@ -305,6 +328,7 @@ public final class MonitorService extends Service {
 
     @Override
     public void onDestroy() {
+        shuttingDown = true;
         handler.removeCallbacksAndMessages(null);
         if (connectivityManager != null && networkCallback != null
                 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -314,15 +338,7 @@ public final class MonitorService extends Service {
                 // Already unregistered by Android.
             }
         }
-        for (WebView monitor : monitorViews) {
-            monitor.removeJavascriptInterface("PanelBridge");
-            monitor.stopLoading();
-            monitor.destroy();
-        }
-        monitorViews.clear();
-        monitorTypes.clear();
-        lastReloads.clear();
-        lastHeartbeats.clear();
+        disposeMonitor();
         super.onDestroy();
     }
 }

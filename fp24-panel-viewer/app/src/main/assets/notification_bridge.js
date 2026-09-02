@@ -1,8 +1,8 @@
 (function () {
     'use strict';
 
-    if (window.__fp24BridgeHealthV3) return;
-    window.__fp24BridgeHealthV3 = true;
+    if (window.__fp24BridgeHealthV4) return;
+    window.__fp24BridgeHealthV4 = true;
 
     var path = String(window.location.pathname || '').toLowerCase();
     var pageType = path.indexOf('/withdraw') === 0 ? 'withdraw'
@@ -42,8 +42,8 @@
         return '';
     }
 
-    function eventIdentity(event, payload) {
-        var names = pageType === 'deposit'
+    function eventIdentity(event, payload, eventType) {
+        var names = eventType === 'deposit'
             ? ['id', 'deposit_id', 'transaction_id', 'request_id']
             : ['id', 'withdraw_id', 'withdrawal_id', 'transaction_id', 'request_id'];
         var id = firstValue(payload, names) || firstValue(event, names);
@@ -121,22 +121,19 @@
 
         try {
             var channel = echoClient.private('user.' + userId);
-            var marker = '__fp24NativeV3_' + pageType;
+            var marker = '__fp24NativeV4_AllRequests';
             if (channel[marker]) return true;
             channel[marker] = true;
 
-            if (pageType === 'deposit') {
-                channel.listen('.DepositAdded', function (event) {
-                    var deposit = event && event.deposit ? event.deposit : {};
-                    report('deposit', eventIdentity(event, deposit));
-                });
-            } else {
-                channel.listen('.WithdrawAdded', function (event) {
-                    var withdraw = event && (event.withdraw || event.withdrawal)
-                        ? (event.withdraw || event.withdrawal) : {};
-                    report('withdraw', eventIdentity(event, withdraw));
-                });
-            }
+            channel.listen('.DepositAdded', function (event) {
+                var deposit = event && event.deposit ? event.deposit : {};
+                report('deposit', eventIdentity(event, deposit, 'deposit'));
+            });
+            channel.listen('.WithdrawAdded', function (event) {
+                var withdraw = event && (event.withdraw || event.withdrawal)
+                    ? (event.withdraw || event.withdrawal) : {};
+                report('withdraw', eventIdentity(event, withdraw, 'withdraw'));
+            });
             return true;
         } catch (ignored) {
             return false;
@@ -231,7 +228,7 @@
     }
 
     function heartbeat() {
-        window.__fp24BridgeHealthV3 = true;
+        window.__fp24BridgeHealthV4 = true;
         if (window.PanelBridge && typeof window.PanelBridge.onHeartbeat === 'function') {
             window.PanelBridge.onHeartbeat();
         }

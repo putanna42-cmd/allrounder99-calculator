@@ -24,5 +24,6 @@
     <string name="not_now">Not now</string>
     <string name="ssl_error">Secure connection failed. The page was blocked.</string>
     <string name="page_error">The panel could not be loaded. Check your internet connection.</string>
+    <string name="page_recovered">Panel display restarted automatically.</string>
     <string name="no_browser">No browser is available for this link.</string>
 </resources>

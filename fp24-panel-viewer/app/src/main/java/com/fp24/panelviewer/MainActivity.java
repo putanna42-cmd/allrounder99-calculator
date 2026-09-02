@@ -7,6 +7,7 @@ import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.net.http.SslError;
@@ -16,8 +17,8 @@ import android.os.PowerManager;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
-import android.view.WindowInsets;
 import android.webkit.CookieManager;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -49,7 +50,10 @@ public final class MainActivity extends Activity {
     private SwipeRefreshLayout swipeRefreshLayout;
     private boolean notificationSettingsOffered;
     private boolean batteryDialogVisible;
+    private boolean rendererRestarting;
+    private int blankPageRetries;
     private String darkThemeScript = "";
+    private String passwordAutofillScript = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -58,16 +62,15 @@ public final class MainActivity extends Activity {
         getWindow().setNavigationBarColor(Color.rgb(5, 8, 13));
         NotificationHelper.createChannels(this);
         darkThemeScript = readAssetQuietly("dark_theme.js");
+        passwordAutofillScript = readAssetQuietly("password_autofill.js");
 
         FrameLayout root = buildScreen();
         setContentView(root);
         applySystemBarInsets(root);
         requestNotificationPermissionIfNeeded();
 
-        if (savedInstanceState == null) {
+        if (savedInstanceState == null || webView.restoreState(savedInstanceState) == null) {
             webView.loadUrl(START_URL);
-        } else {
-            webView.restoreState(savedInstanceState);
         }
     }
 
@@ -85,11 +88,19 @@ public final class MainActivity extends Activity {
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.rgb(5, 8, 13));
+        webView.setSaveEnabled(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            webView.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_YES);
+            webView.setAutofillHints(View.AUTOFILL_HINT_USERNAME, View.AUTOFILL_HINT_PASSWORD);
+        }
         configureWebView();
         swipeRefreshLayout.addView(webView, new SwipeRefreshLayout.LayoutParams(
                 SwipeRefreshLayout.LayoutParams.MATCH_PARENT,
                 SwipeRefreshLayout.LayoutParams.MATCH_PARENT));
-        swipeRefreshLayout.setOnRefreshListener(webView::reload);
+        swipeRefreshLayout.setOnRefreshListener(() -> {
+            blankPageRetries = 0;
+            webView.reload();
+        });
         swipeRefreshLayout.setOnChildScrollUpCallback(
                 (parent, child) -> webView.canScrollVertically(-1));
 
@@ -127,6 +138,7 @@ public final class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
+        settings.setSaveFormData(true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         settings.setSupportZoom(true);
@@ -135,8 +147,10 @@ public final class MainActivity extends Activity {
         settings.setUseWideViewPort(true);
         settings.setLoadWithOverviewMode(false);
         settings.setTextZoom(100);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setDefaultTextEncodingName("UTF-8");
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " FP24PanelViewer/3.0");
+        settings.setUserAgentString(settings.getUserAgentString() + " FP24PanelViewer/4.0");
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
@@ -169,26 +183,51 @@ public final class MainActivity extends Activity {
             }
 
             @Override
-            public void onPageFinished(WebView view, String url) {
-                super.onPageFinished(view, url);
-                swipeRefreshLayout.setRefreshing(false);
-                injectDarkTheme(view);
-                updateMonitoringForUrl(url);
+            public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                view.setBackgroundColor(Color.rgb(5, 8, 13));
+                progressBar.setVisibility(View.VISIBLE);
             }
 
             @Override
-            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+            public void onPageCommitVisible(WebView view, String url) {
+                super.onPageCommitVisible(view, url);
+                injectPageHelpers(view);
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                swipeRefreshLayout.setRefreshing(false);
+                injectPageHelpers(view);
+                CookieManager.getInstance().flush();
+                updateMonitoringForUrl(url);
+                view.requestLayout();
+                view.invalidate();
+                verifyPageIsNotBlank(view, url);
+            }
+
+            @Override
+            public void onReceivedSslError(
+                    WebView view, SslErrorHandler handler, SslError error) {
                 handler.cancel();
                 Toast.makeText(MainActivity.this, R.string.ssl_error, Toast.LENGTH_LONG).show();
             }
 
             @Override
-            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            public void onReceivedError(
+                    WebView view, WebResourceRequest request, WebResourceError error) {
                 super.onReceivedError(view, request, error);
                 if (request.isForMainFrame()) {
                     swipeRefreshLayout.setRefreshing(false);
                     Toast.makeText(MainActivity.this, R.string.page_error, Toast.LENGTH_LONG).show();
                 }
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                restartVisibleWebView();
+                return true;
             }
         });
     }
@@ -212,7 +251,7 @@ public final class MainActivity extends Activity {
 
     private void updateMonitoringForUrl(String rawUrl) {
         Uri uri = Uri.parse(rawUrl);
-        String path = uri.getPath() == null ? "" : uri.getPath();
+        String path = uri.getPath() == null ? "" : uri.getPath().toLowerCase();
         if (!ALLOWED_HOST.equalsIgnoreCase(uri.getHost())) {
             return;
         }
@@ -225,11 +264,60 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void injectDarkTheme(WebView target) {
-        if (darkThemeScript == null || darkThemeScript.isEmpty()) {
+    private void injectPageHelpers(WebView target) {
+        if (darkThemeScript != null && !darkThemeScript.isEmpty()) {
+            target.evaluateJavascript(darkThemeScript, null);
+        }
+        if (passwordAutofillScript != null && !passwordAutofillScript.isEmpty()) {
+            target.evaluateJavascript(passwordAutofillScript, null);
+        }
+    }
+
+    private void verifyPageIsNotBlank(WebView target, String expectedUrl) {
+        target.postDelayed(() -> {
+            if (target != webView || expectedUrl == null
+                    || !expectedUrl.equals(target.getUrl())) {
+                return;
+            }
+            target.evaluateJavascript(
+                    "(function(){var b=document.body;if(!b)return 0;"
+                            + "var t=(b.innerText||b.textContent||'').trim().length;"
+                            + "return t+(b.children?b.children.length*10:0);})()",
+                    result -> {
+                        int score = 0;
+                        try {
+                            score = Integer.parseInt(String.valueOf(result).replace("\"", ""));
+                        } catch (NumberFormatException ignored) {
+                            // A non-numeric result is treated as a failed render.
+                        }
+                        if (score > 10) {
+                            blankPageRetries = 0;
+                            return;
+                        }
+                        if (blankPageRetries < 2) {
+                            blankPageRetries += 1;
+                            target.clearCache(false);
+                            target.reload();
+                        } else {
+                            restartVisibleWebView();
+                        }
+                    });
+        }, 1400L);
+    }
+
+    private void restartVisibleWebView() {
+        if (rendererRestarting || isFinishing()) {
             return;
         }
-        target.evaluateJavascript(darkThemeScript, null);
+        rendererRestarting = true;
+        MonitorService.stop(this);
+        Toast.makeText(this, R.string.page_recovered, Toast.LENGTH_SHORT).show();
+        Intent restart = new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        getWindow().getDecorView().postDelayed(() -> {
+            startActivity(restart);
+            finish();
+        }, 250L);
     }
 
     private String readAssetQuietly(String name) {
@@ -264,7 +352,8 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle(R.string.battery_title)
                 .setMessage(R.string.battery_body)
-                .setNegativeButton(R.string.not_now, (dialog, which) -> batteryDialogVisible = false)
+                .setNegativeButton(R.string.not_now,
+                        (dialog, which) -> batteryDialogVisible = false)
                 .setPositiveButton(R.string.allow_background, (dialog, which) -> {
                     batteryDialogVisible = false;
                     Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
@@ -299,7 +388,8 @@ public final class MainActivity extends Activity {
         if (requestCode != NOTIFICATION_PERMISSION_REQUEST) {
             return;
         }
-        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        if (grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             NotificationHelper.showReadyNotificationOnce(this);
         } else {
             offerNotificationSettings();
@@ -309,8 +399,8 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (!NotificationHelper.canPostNotifications(this)) {
-            webView.postDelayed(this::offerNotificationSettings, 700);
+        if (webView != null && !NotificationHelper.canPostNotifications(this)) {
+            webView.postDelayed(this::offerNotificationSettings, 700L);
         }
     }
 
@@ -337,7 +427,9 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
-        webView.saveState(outState);
+        if (webView != null && !rendererRestarting) {
+            webView.saveState(outState);
+        }
         super.onSaveInstanceState(outState);
     }
 
@@ -353,8 +445,16 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (webView != null) {
-            webView.stopLoading();
-            webView.destroy();
+            try {
+                webView.stopLoading();
+                webView.loadUrl("about:blank");
+                webView.clearHistory();
+                webView.removeAllViews();
+                webView.destroy();
+            } catch (RuntimeException ignored) {
+                // The renderer may already be gone; Android owns the remaining cleanup.
+            }
+            webView = null;
         }
         super.onDestroy();
     }
