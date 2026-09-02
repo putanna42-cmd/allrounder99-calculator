@@ -4,6 +4,8 @@ A second independently installable personal-use Android WebView wrapper for `htt
 
 Its application ID is `com.fp24.panelviewer.clone2`, so it can be installed beside the original app with a separate login session, cookies, password-manager entry, notification channels, and monitoring service.
 
+Clone 2 intentionally keeps the panel's clean white theme and uses a purple launcher icon so it is easy to distinguish from the original app.
+
 ## Included
 
 - Panel login remains inside Android WebView cookies.

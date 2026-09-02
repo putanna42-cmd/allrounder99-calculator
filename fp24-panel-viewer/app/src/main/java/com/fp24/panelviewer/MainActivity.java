@@ -52,16 +52,19 @@ public final class MainActivity extends Activity {
     private boolean batteryDialogVisible;
     private boolean rendererRestarting;
     private int blankPageRetries;
-    private String darkThemeScript = "";
     private String passwordAutofillScript = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(Color.rgb(5, 8, 13));
-        getWindow().setNavigationBarColor(Color.rgb(5, 8, 13));
+        getWindow().setStatusBarColor(Color.WHITE);
+        getWindow().setNavigationBarColor(Color.WHITE);
+        int lightBars = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            lightBars |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }
+        getWindow().getDecorView().setSystemUiVisibility(lightBars);
         NotificationHelper.createChannels(this);
-        darkThemeScript = readAssetQuietly("dark_theme.js");
         passwordAutofillScript = readAssetQuietly("password_autofill.js");
 
         FrameLayout root = buildScreen();
@@ -76,18 +79,18 @@ public final class MainActivity extends Activity {
 
     private FrameLayout buildScreen() {
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.rgb(5, 8, 13));
+        root.setBackgroundColor(Color.WHITE);
 
         swipeRefreshLayout = new SwipeRefreshLayout(this);
         swipeRefreshLayout.setColorSchemeColors(
                 Color.rgb(24, 195, 126),
                 Color.rgb(31, 162, 184),
                 Color.rgb(255, 193, 7));
-        swipeRefreshLayout.setProgressBackgroundColorSchemeColor(Color.rgb(17, 27, 39));
+        swipeRefreshLayout.setProgressBackgroundColorSchemeColor(Color.WHITE);
         swipeRefreshLayout.setDistanceToTriggerSync(dp(86));
 
         webView = new WebView(this);
-        webView.setBackgroundColor(Color.rgb(5, 8, 13));
+        webView.setBackgroundColor(Color.WHITE);
         webView.setSaveEnabled(true);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             webView.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_YES);
@@ -185,7 +188,7 @@ public final class MainActivity extends Activity {
             @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 super.onPageStarted(view, url, favicon);
-                view.setBackgroundColor(Color.rgb(5, 8, 13));
+                view.setBackgroundColor(Color.WHITE);
                 progressBar.setVisibility(View.VISIBLE);
             }
 
@@ -265,9 +268,6 @@ public final class MainActivity extends Activity {
     }
 
     private void injectPageHelpers(WebView target) {
-        if (darkThemeScript != null && !darkThemeScript.isEmpty()) {
-            target.evaluateJavascript(darkThemeScript, null);
-        }
         if (passwordAutofillScript != null && !passwordAutofillScript.isEmpty()) {
             target.evaluateJavascript(passwordAutofillScript, null);
         }
