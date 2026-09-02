@@ -1,23 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">FP24 Panel Viewer</string>
-    <string name="channel_name">Deposit and withdrawal requests</string>
+    <string name="app_name">FP24 Panel Viewer 2</string>
+    <string name="channel_name">FP24 2 deposit and withdrawal requests</string>
     <string name="channel_description">Live alerts for new panel deposit and withdrawal requests</string>
-    <string name="monitor_channel_name">FP24 live monitoring</string>
+    <string name="monitor_channel_name">FP24 2 live monitoring</string>
     <string name="monitor_channel_description">Keeps deposit and withdrawal monitoring active in the background</string>
-    <string name="monitor_title">FP24 monitoring active</string>
+    <string name="monitor_title">FP24 Clone 2 monitoring active</string>
     <string name="monitor_body">Always-on monitoring for deposit and withdrawal requests.</string>
     <string name="deposit_title">New deposit request</string>
-    <string name="deposit_body">Open FP24 Panel Viewer to review it.</string>
+    <string name="deposit_body">Open FP24 Panel Viewer 2 to review it.</string>
     <string name="withdraw_title">New withdrawal request</string>
-    <string name="withdraw_body">Open FP24 Panel Viewer to review it.</string>
-    <string name="ready_title">FP24 notifications are active</string>
+    <string name="withdraw_body">Open FP24 Panel Viewer 2 to review it.</string>
+    <string name="ready_title">FP24 Clone 2 notifications are active</string>
     <string name="ready_body">Live deposit and withdrawal monitoring will start after panel login.</string>
-    <string name="session_title">FP24 login required</string>
-    <string name="session_body">Your panel session expired. Open the app and log in again to continue alerts.</string>
-    <string name="notification_disabled_title">Enable FP24 notifications</string>
+    <string name="session_title">FP24 Clone 2 login required</string>
+    <string name="session_body">Your Clone 2 panel session expired. Open the app and log in again to continue alerts.</string>
+    <string name="notification_disabled_title">Enable FP24 Clone 2 notifications</string>
     <string name="notification_disabled_body">Notifications are turned off. Enable them in App settings to receive deposit and withdrawal alerts.</string>
-    <string name="battery_title">Keep FP24 alerts running</string>
+    <string name="battery_title">Keep FP24 Clone 2 alerts running</string>
     <string name="battery_body">Allow unrestricted background use so Android does not pause deposit and withdrawal monitoring when the phone is locked.</string>
     <string name="allow_background">Allow background use</string>
     <string name="open_settings">Open settings</string>

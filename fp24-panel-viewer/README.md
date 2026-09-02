@@ -1,6 +1,8 @@
-# FP24 Panel Viewer
+# FP24 Panel Viewer Clone 2
 
-A personal-use Android WebView wrapper for `https://panel.freeplay24.com/login`.
+A second independently installable personal-use Android WebView wrapper for `https://panel.freeplay24.com/login`.
+
+Its application ID is `com.fp24.panelviewer.clone2`, so it can be installed beside the original app with a separate login session, cookies, password-manager entry, notification channels, and monitoring service.
 
 ## Included
 
