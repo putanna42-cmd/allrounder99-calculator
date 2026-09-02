@@ -9,13 +9,17 @@ A personal-use Android WebView wrapper for `https://panel.freeplay24.com/login`.
 - Cleartext HTTP and invalid SSL pages are blocked.
 - The app listens for the panel's exact `.DepositAdded` and `.WithdrawAdded` Laravel Echo events.
 - Two private background WebViews keep the Deposit and Withdraw event pages active after login.
+- Automatic reconnect, page health checks, and request-list snapshots recover events missed during brief network interruptions.
+- The always-on special-use foreground service is not subject to Android 15's six-hour `dataSync` timeout.
+- Request alerts use a public, high-priority lock-screen notification channel.
+- A native-injected black theme is applied to every panel page.
 - Pull down from the top of the panel to refresh; there is no extra app toolbar or refresh button.
 - Notifications intentionally omit usernames, amounts, account numbers, and UTR values.
 - A one-time “notifications active” message confirms Android notification permission.
 
 ## Important limitation
 
-The panel does not expose an official push API or Firebase configuration to this app. A low-priority foreground-service notification keeps live monitoring active after login. Transaction alerts are still not guaranteed after force-stop, session expiry, Android terminating the service, the platform foreground-service time limit, or a panel-side event change.
+The panel does not expose an official push API or Firebase configuration to this app. A low-priority foreground-service notification keeps live monitoring active after login. Transaction alerts are still not guaranteed after force-stop, session expiry, Android terminating the service, or a panel-side event change.
 
 Reliable always-on background alerts require an official FreePlay24 webhook/API connected to a push backend such as Firebase Cloud Messaging.
 

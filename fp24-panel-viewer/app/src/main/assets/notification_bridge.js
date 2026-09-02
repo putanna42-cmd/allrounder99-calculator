@@ -1,8 +1,8 @@
 (function () {
     'use strict';
 
-    if (window.__fp24ExactNotificationBridgeV2) return;
-    window.__fp24ExactNotificationBridgeV2 = true;
+    if (window.__fp24BridgeHealthV3) return;
+    window.__fp24BridgeHealthV3 = true;
 
     var path = String(window.location.pathname || '').toLowerCase();
     var pageType = path.indexOf('/withdraw') === 0 ? 'withdraw'
@@ -10,27 +10,65 @@
     if (!pageType) return;
 
     var seen = Object.create(null);
-    var lastWithoutId = 0;
+    var eventCounter = 0;
+    var observedBody = null;
+    var rowObserver = null;
 
     function cleanId(value) {
         if (value === null || typeof value === 'undefined') return '';
-        var text = String(value).trim();
-        return text.length <= 80 ? text : text.slice(0, 80);
+        var text = String(value).replace(/\s+/g, ' ').trim();
+        return text.length <= 180 ? text : text.slice(0, 180);
+    }
+
+    function hashText(value) {
+        var text = String(value || '');
+        var hash = 2166136261;
+        for (var i = 0; i < text.length; i += 1) {
+            hash ^= text.charCodeAt(i);
+            hash += (hash << 1) + (hash << 4) + (hash << 7)
+                + (hash << 8) + (hash << 24);
+        }
+        return 'h-' + (hash >>> 0).toString(16);
+    }
+
+    function firstValue(object, names) {
+        if (!object || typeof object !== 'object') return '';
+        for (var i = 0; i < names.length; i += 1) {
+            var value = object[names[i]];
+            if (value !== null && typeof value !== 'undefined' && String(value).trim()) {
+                return cleanId(value);
+            }
+        }
+        return '';
+    }
+
+    function eventIdentity(event, payload) {
+        var names = pageType === 'deposit'
+            ? ['id', 'deposit_id', 'transaction_id', 'request_id']
+            : ['id', 'withdraw_id', 'withdrawal_id', 'transaction_id', 'request_id'];
+        var id = firstValue(payload, names) || firstValue(event, names);
+        if (id) return id;
+
+        try {
+            var serialized = JSON.stringify(event || payload || {});
+            if (serialized && serialized !== '{}') return hashText(serialized);
+        } catch (ignored) {
+            // A generated id below still guarantees that back-to-back events are not dropped.
+        }
+        eventCounter += 1;
+        return 'live-' + Date.now() + '-' + eventCounter;
     }
 
     function report(type, id) {
         if (!window.PanelBridge || typeof window.PanelBridge.onEvent !== 'function') return;
-
         var eventId = cleanId(id);
-        if (eventId) {
-            var key = type + ':' + eventId;
-            if (seen[key]) return;
-            seen[key] = true;
-        } else {
-            var now = Date.now();
-            if (now - lastWithoutId < 2000) return;
-            lastWithoutId = now;
+        if (!eventId) {
+            eventCounter += 1;
+            eventId = 'live-' + Date.now() + '-' + eventCounter;
         }
+        var key = type + ':' + eventId;
+        if (seen[key]) return;
+        seen[key] = true;
         window.PanelBridge.onEvent(type, eventId);
     }
 
@@ -51,6 +89,22 @@
         return '';
     }
 
+    function reconnectEchoIfNeeded() {
+        try {
+            if (typeof Echo === 'undefined' || !Echo || !Echo.connector) return;
+            var pusher = Echo.connector.pusher;
+            var connection = pusher && pusher.connection;
+            if (!connection || typeof connection.connect !== 'function') return;
+            if (connection.state === 'disconnected'
+                    || connection.state === 'unavailable'
+                    || connection.state === 'failed') {
+                connection.connect();
+            }
+        } catch (ignored) {
+            // The native page-health reload is the second reconnect fallback.
+        }
+    }
+
     function attachExactEchoListener() {
         var echoClient;
         try {
@@ -67,19 +121,20 @@
 
         try {
             var channel = echoClient.private('user.' + userId);
-            var marker = '__fp24Native_' + pageType;
+            var marker = '__fp24NativeV3_' + pageType;
             if (channel[marker]) return true;
             channel[marker] = true;
 
             if (pageType === 'deposit') {
                 channel.listen('.DepositAdded', function (event) {
                     var deposit = event && event.deposit ? event.deposit : {};
-                    report('deposit', deposit.id || deposit.deposit_id || '');
+                    report('deposit', eventIdentity(event, deposit));
                 });
             } else {
                 channel.listen('.WithdrawAdded', function (event) {
-                    var withdraw = event && event.withdraw ? event.withdraw : {};
-                    report('withdraw', withdraw.id || withdraw.withdraw_id || '');
+                    var withdraw = event && (event.withdraw || event.withdrawal)
+                        ? (event.withdraw || event.withdrawal) : {};
+                    report('withdraw', eventIdentity(event, withdraw));
                 });
             }
             return true;
@@ -88,49 +143,110 @@
         }
     }
 
-    var echoAttempts = 0;
-    var echoTimer = window.setInterval(function () {
-        echoAttempts += 1;
-        if (attachExactEchoListener() || echoAttempts >= 60) {
-            window.clearInterval(echoTimer);
-        }
-    }, 1000);
-    attachExactEchoListener();
-
     function rowEventId(row) {
-        if (!row || !row.cells || row.cells.length < 2) return '';
-        return cleanId(row.cells[1].textContent || '');
+        if (!row || row.nodeType !== 1) return '';
+        if (row.classList && row.classList.contains('dataTables_empty')) return '';
+
+        var direct = row.getAttribute('data-id')
+            || row.getAttribute('data-deposit-id')
+            || row.getAttribute('data-withdraw-id')
+            || row.getAttribute('data-withdrawal-id');
+        if (direct) return cleanId(direct);
+
+        var identified = row.querySelector(
+            '[data-id], [data-deposit-id], [data-withdraw-id], [data-withdrawal-id]');
+        if (identified) {
+            direct = identified.getAttribute('data-id')
+                || identified.getAttribute('data-deposit-id')
+                || identified.getAttribute('data-withdraw-id')
+                || identified.getAttribute('data-withdrawal-id');
+            if (direct) return cleanId(direct);
+        }
+
+        var links = Array.prototype.slice.call(row.querySelectorAll('a[href]'));
+        for (var i = 0; i < links.length; i += 1) {
+            var href = links[i].getAttribute('href') || '';
+            var match = href.match(/\/(?:deposits?|withdrawals?)\/(\d+)(?:\D|$)/i)
+                || href.match(/[?&](?:id|deposit_id|withdraw_id|withdrawal_id)=(\d+)/i);
+            if (match) return cleanId(match[1]);
+        }
+
+        var cells = Array.prototype.slice.call(row.cells || []);
+        if (!cells.length) return '';
+        var stableText = cells.slice(0, Math.min(cells.length, 6)).map(function (cell) {
+            return cleanId(cell.textContent || '');
+        }).join('|');
+        return stableText ? hashText(stableText) : '';
     }
 
-    function attachTableObserver() {
+    function tableBody() {
         var selector = pageType === 'deposit'
             ? '.deposit_list_table tbody'
             : '.withdraw_list_table tbody';
-        var tableBody = document.querySelector(selector);
-        if (!tableBody || typeof MutationObserver === 'undefined') return false;
+        return document.querySelector(selector);
+    }
 
-        var observer = new MutationObserver(function (mutations) {
+    function currentRowIds() {
+        var body = tableBody();
+        if (!body) return [];
+        var ids = [];
+        Array.prototype.forEach.call(body.querySelectorAll('tr'), function (row) {
+            var id = rowEventId(row);
+            if (id && ids.indexOf(id) === -1) ids.push(id);
+        });
+        return ids;
+    }
+
+    function sendSnapshot() {
+        if (!window.PanelBridge || typeof window.PanelBridge.onSnapshot !== 'function') return;
+        window.PanelBridge.onSnapshot(pageType, JSON.stringify(currentRowIds()));
+    }
+
+    function attachTableObserver() {
+        var body = tableBody();
+        if (!body || typeof MutationObserver === 'undefined') return false;
+        if (body === observedBody && rowObserver) return true;
+        if (rowObserver) rowObserver.disconnect();
+        observedBody = body;
+        rowObserver = new MutationObserver(function (mutations) {
             mutations.forEach(function (mutation) {
                 Array.prototype.forEach.call(mutation.addedNodes || [], function (node) {
                     if (!node || node.nodeType !== 1) return;
                     if (node.tagName === 'TR') {
-                        report(pageType, rowEventId(node));
+                        var id = rowEventId(node);
+                        if (id) report(pageType, id);
                     }
                     if (node.querySelectorAll) {
                         Array.prototype.forEach.call(node.querySelectorAll('tr'), function (row) {
-                            report(pageType, rowEventId(row));
+                            var nestedId = rowEventId(row);
+                            if (nestedId) report(pageType, nestedId);
                         });
                     }
                 });
             });
         });
-        observer.observe(tableBody, { childList: true, subtree: true });
+        rowObserver.observe(body, { childList: true, subtree: true });
+        sendSnapshot();
         return true;
     }
 
-    window.setTimeout(function startObserverWhenStable() {
-        if (!attachTableObserver()) {
-            window.setTimeout(startObserverWhenStable, 1500);
+    function heartbeat() {
+        window.__fp24BridgeHealthV3 = true;
+        if (window.PanelBridge && typeof window.PanelBridge.onHeartbeat === 'function') {
+            window.PanelBridge.onHeartbeat();
         }
-    }, 8000);
+    }
+
+    attachExactEchoListener();
+    attachTableObserver();
+    heartbeat();
+
+    window.setInterval(function () {
+        reconnectEchoIfNeeded();
+        attachExactEchoListener();
+        attachTableObserver();
+        heartbeat();
+    }, 5000);
+
+    window.setInterval(sendSnapshot, 20000);
 }());

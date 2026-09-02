@@ -14,21 +14,26 @@ import android.media.AudioAttributes;
 import android.os.Build;
 import android.provider.Settings;
 
-import java.util.LinkedHashMap;
+import org.json.JSONArray;
+import org.json.JSONException;
+
+import java.util.HashSet;
 import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Set;
 
 final class NotificationHelper {
-    static final String REQUEST_CHANNEL_ID = "fp24_requests";
+    static final String REQUEST_CHANNEL_ID = "fp24_requests_v3";
     static final String MONITOR_CHANNEL_ID = "fp24_monitoring";
     static final int MONITOR_NOTIFICATION_ID = 2402;
 
-    private static final AtomicInteger NEXT_NOTIFICATION_ID = new AtomicInteger(5000);
-    private static final Map<String, Long> RECENT_EVENTS = new LinkedHashMap<>();
-    private static final Map<String, Long> LAST_TYPE_EVENT = new LinkedHashMap<>();
+    private static final String OLD_REQUEST_CHANNEL_ID = "fp24_requests";
     private static final String PREFS = "fp24_notification_state";
-    private static final String READY_SHOWN_V2 = "ready_shown_v2";
+    private static final String READY_SHOWN_V3 = "ready_shown_v3";
+    private static final String SESSION_EXPIRED_SHOWN = "session_expired_shown_v3";
+    private static final String SEEN_EVENTS = "seen_events_v3";
+    private static final String SNAPSHOT_READY_PREFIX = "snapshot_ready_v3_";
+    private static final String NEXT_ID = "next_notification_id_v3";
+    private static final int MAX_REMEMBERED_EVENTS = 1200;
 
     private NotificationHelper() {
     }
@@ -39,8 +44,11 @@ final class NotificationHelper {
         }
 
         NotificationManager manager = context.getSystemService(NotificationManager.class);
+        manager.deleteNotificationChannel(OLD_REQUEST_CHANNEL_ID);
+
         AudioAttributes audioAttributes = new AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build();
 
         NotificationChannel requests = new NotificationChannel(
@@ -49,8 +57,12 @@ final class NotificationHelper {
                 NotificationManager.IMPORTANCE_HIGH);
         requests.setDescription(context.getString(R.string.channel_description));
         requests.enableVibration(true);
+        requests.setVibrationPattern(new long[]{0, 250, 120, 350});
+        requests.enableLights(true);
+        requests.setLightColor(Color.rgb(24, 195, 126));
         requests.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, audioAttributes);
-        requests.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
+        requests.setShowBadge(true);
+        requests.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         manager.createNotificationChannel(requests);
 
         NotificationChannel monitor = new NotificationChannel(
@@ -89,16 +101,16 @@ final class NotificationHelper {
             return;
         }
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        if (prefs.getBoolean(READY_SHOWN_V2, false)) {
+        if (prefs.getBoolean(READY_SHOWN_V3, false)) {
             return;
         }
-        prefs.edit().putBoolean(READY_SHOWN_V2, true).apply();
+        prefs.edit().putBoolean(READY_SHOWN_V3, true).apply();
         showNotification(
                 context,
                 context.getString(R.string.ready_title),
                 context.getString(R.string.ready_body),
                 false,
-                NEXT_NOTIFICATION_ID.incrementAndGet());
+                nextNotificationId(context));
     }
 
     static Notification buildMonitoringNotification(Context context) {
@@ -115,49 +127,148 @@ final class NotificationHelper {
             return;
         }
 
-        String type = rawType == null ? "" : rawType.toLowerCase(Locale.ROOT);
-        if (!type.contains("deposit") && !type.contains("withdraw")) {
+        String type = normalizeType(rawType);
+        if (type.isEmpty()) {
             return;
         }
-        if (!rememberEvent(type, eventId)) {
+
+        String cleanId = cleanEventId(eventId);
+        if (!cleanId.isEmpty() && !rememberEvent(context, type + ':' + cleanId)) {
             return;
         }
 
         final String title;
         final String body;
-        if (type.contains("withdraw")) {
+        if ("withdraw".equals(type)) {
             title = context.getString(R.string.withdraw_title);
             body = context.getString(R.string.withdraw_body);
         } else {
             title = context.getString(R.string.deposit_title);
             body = context.getString(R.string.deposit_body);
         }
-        showNotification(context, title, body, false, NEXT_NOTIFICATION_ID.incrementAndGet());
+        showNotification(context, title, body, false, nextNotificationId(context));
     }
 
-    private static synchronized boolean rememberEvent(String type, String eventId) {
-        long now = System.currentTimeMillis();
-        String cleanId = eventId == null ? "" : eventId.trim();
-
-        if (!cleanId.isEmpty()) {
-            String key = type + ':' + cleanId;
-            if (RECENT_EVENTS.containsKey(key)) {
-                return false;
-            }
-            RECENT_EVENTS.put(key, now);
-            while (RECENT_EVENTS.size() > 200) {
-                String oldest = RECENT_EVENTS.keySet().iterator().next();
-                RECENT_EVENTS.remove(oldest);
-            }
-            return true;
+    static synchronized void processSnapshot(
+            Context context, String rawType, String snapshotJson) {
+        String type = normalizeType(rawType);
+        if (type.isEmpty() || snapshotJson == null) {
+            return;
         }
 
-        Long last = LAST_TYPE_EVENT.get(type);
-        if (last != null && now - last < 2000) {
+        Set<String> snapshotKeys = new HashSet<>();
+        try {
+            JSONArray values = new JSONArray(snapshotJson);
+            for (int i = 0; i < values.length(); i++) {
+                String id = cleanEventId(values.optString(i, ""));
+                if (!id.isEmpty()) {
+                    snapshotKeys.add(type + ':' + id);
+                }
+            }
+        } catch (JSONException ignored) {
+            return;
+        }
+
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        String baselineKey = SNAPSHOT_READY_PREFIX + type;
+        if (!prefs.getBoolean(baselineKey, false)) {
+            Set<String> seen = loadSeenEvents(prefs);
+            seen.addAll(snapshotKeys);
+            trimSeenEvents(seen);
+            prefs.edit()
+                    .putStringSet(SEEN_EVENTS, seen)
+                    .putBoolean(baselineKey, true)
+                    .apply();
+            return;
+        }
+
+        for (String key : snapshotKeys) {
+            int separator = key.indexOf(':');
+            String id = separator >= 0 ? key.substring(separator + 1) : key;
+            showRequestNotification(context, type, id);
+        }
+    }
+
+    static void showSessionExpiredNotificationOnce(Context context) {
+        if (!canPostNotifications(context)) {
+            return;
+        }
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        if (prefs.getBoolean(SESSION_EXPIRED_SHOWN, false)) {
+            return;
+        }
+        prefs.edit().putBoolean(SESSION_EXPIRED_SHOWN, true).apply();
+        showNotification(
+                context,
+                context.getString(R.string.session_title),
+                context.getString(R.string.session_body),
+                false,
+                nextNotificationId(context));
+    }
+
+    static void clearSessionExpired(Context context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(SESSION_EXPIRED_SHOWN, false)
+                .apply();
+    }
+
+    private static String normalizeType(String rawType) {
+        String type = rawType == null ? "" : rawType.toLowerCase(Locale.ROOT);
+        if (type.contains("withdraw")) {
+            return "withdraw";
+        }
+        if (type.contains("deposit")) {
+            return "deposit";
+        }
+        return "";
+    }
+
+    private static String cleanEventId(String eventId) {
+        if (eventId == null) {
+            return "";
+        }
+        String clean = eventId.trim();
+        return clean.length() <= 180 ? clean : clean.substring(0, 180);
+    }
+
+    private static synchronized boolean rememberEvent(Context context, String key) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        Set<String> seen = loadSeenEvents(prefs);
+        if (seen.contains(key)) {
             return false;
         }
-        LAST_TYPE_EVENT.put(type, now);
+        seen.add(key);
+        trimSeenEvents(seen);
+        prefs.edit().putStringSet(SEEN_EVENTS, seen).apply();
         return true;
+    }
+
+    private static Set<String> loadSeenEvents(SharedPreferences prefs) {
+        return new HashSet<>(prefs.getStringSet(SEEN_EVENTS, new HashSet<>()));
+    }
+
+    private static void trimSeenEvents(Set<String> seen) {
+        if (seen.size() <= MAX_REMEMBERED_EVENTS) {
+            return;
+        }
+        int removeCount = seen.size() - (MAX_REMEMBERED_EVENTS / 2);
+        for (String key : new HashSet<>(seen)) {
+            if (removeCount-- <= 0) {
+                break;
+            }
+            seen.remove(key);
+        }
+    }
+
+    private static synchronized int nextNotificationId(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        int next = prefs.getInt(NEXT_ID, 10000) + 1;
+        if (next >= Integer.MAX_VALUE - 1000) {
+            next = 10001;
+        }
+        prefs.edit().putInt(NEXT_ID, next).apply();
+        return next;
     }
 
     private static void showNotification(
@@ -165,7 +276,8 @@ final class NotificationHelper {
         NotificationManager manager =
                 (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         manager.notify(id, buildNotification(
-                context, title, body, ongoing, REQUEST_CHANNEL_ID));
+                context, title, body, ongoing,
+                ongoing ? MONITOR_CHANNEL_ID : REQUEST_CHANNEL_ID));
     }
 
     private static Notification buildNotification(
@@ -177,7 +289,7 @@ final class NotificationHelper {
             pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
         }
         PendingIntent pendingIntent = PendingIntent.getActivity(
-                context, ongoing ? 2402 : 0, openIntent, pendingFlags);
+                context, ongoing ? MONITOR_NOTIFICATION_ID : 0, openIntent, pendingFlags);
 
         Notification.Builder builder;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -193,11 +305,17 @@ final class NotificationHelper {
                 .setContentIntent(pendingIntent)
                 .setOngoing(ongoing)
                 .setAutoCancel(!ongoing)
-                .setVisibility(ongoing ? Notification.VISIBILITY_SECRET : Notification.VISIBILITY_PRIVATE)
-                .setCategory(ongoing ? Notification.CATEGORY_SERVICE : Notification.CATEGORY_STATUS);
+                .setOnlyAlertOnce(ongoing)
+                .setShowWhen(!ongoing)
+                .setVisibility(ongoing
+                        ? Notification.VISIBILITY_SECRET
+                        : Notification.VISIBILITY_PUBLIC)
+                .setCategory(ongoing
+                        ? Notification.CATEGORY_SERVICE
+                        : Notification.CATEGORY_MESSAGE);
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O && !ongoing) {
-            builder.setPriority(Notification.PRIORITY_HIGH)
+            builder.setPriority(Notification.PRIORITY_MAX)
                     .setDefaults(Notification.DEFAULT_ALL);
         } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             builder.setPriority(Notification.PRIORITY_LOW);

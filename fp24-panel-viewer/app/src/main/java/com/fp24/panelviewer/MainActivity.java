@@ -5,12 +5,14 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
@@ -29,22 +31,33 @@ import android.widget.Toast;
 
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+
 public final class MainActivity extends Activity {
     private static final String START_URL = "https://panel.freeplay24.com/login";
     private static final String ALLOWED_HOST = "panel.freeplay24.com";
     private static final int NOTIFICATION_PERMISSION_REQUEST = 2401;
+    private static final String APP_PREFS = "fp24_app_state";
+    private static final String BATTERY_PROMPT_SHOWN = "battery_prompt_shown_v3";
 
     private WebView webView;
     private ProgressBar progressBar;
     private SwipeRefreshLayout swipeRefreshLayout;
     private boolean notificationSettingsOffered;
+    private boolean batteryDialogVisible;
+    private String darkThemeScript = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(Color.rgb(9, 18, 33));
-        getWindow().setNavigationBarColor(Color.rgb(9, 18, 33));
+        getWindow().setStatusBarColor(Color.rgb(5, 8, 13));
+        getWindow().setNavigationBarColor(Color.rgb(5, 8, 13));
         NotificationHelper.createChannels(this);
+        darkThemeScript = readAssetQuietly("dark_theme.js");
 
         FrameLayout root = buildScreen();
         setContentView(root);
@@ -60,17 +73,18 @@ public final class MainActivity extends Activity {
 
     private FrameLayout buildScreen() {
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.rgb(9, 18, 33));
+        root.setBackgroundColor(Color.rgb(5, 8, 13));
 
         swipeRefreshLayout = new SwipeRefreshLayout(this);
         swipeRefreshLayout.setColorSchemeColors(
                 Color.rgb(24, 195, 126),
                 Color.rgb(31, 162, 184),
                 Color.rgb(255, 193, 7));
-        swipeRefreshLayout.setProgressBackgroundColorSchemeColor(Color.WHITE);
+        swipeRefreshLayout.setProgressBackgroundColorSchemeColor(Color.rgb(17, 27, 39));
         swipeRefreshLayout.setDistanceToTriggerSync(dp(86));
 
         webView = new WebView(this);
+        webView.setBackgroundColor(Color.rgb(5, 8, 13));
         configureWebView();
         swipeRefreshLayout.addView(webView, new SwipeRefreshLayout.LayoutParams(
                 SwipeRefreshLayout.LayoutParams.MATCH_PARENT,
@@ -122,7 +136,7 @@ public final class MainActivity extends Activity {
         settings.setLoadWithOverviewMode(false);
         settings.setTextZoom(100);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " FP24PanelViewer/2.0");
+        settings.setUserAgentString(settings.getUserAgentString() + " FP24PanelViewer/3.0");
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
@@ -158,6 +172,7 @@ public final class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 swipeRefreshLayout.setRefreshing(false);
+                injectDarkTheme(view);
                 updateMonitoringForUrl(url);
             }
 
@@ -204,8 +219,65 @@ public final class MainActivity extends Activity {
         if (path.equals("/login") || path.equals("/logout")) {
             MonitorService.stop(this);
         } else {
+            NotificationHelper.clearSessionExpired(this);
             MonitorService.start(this);
+            webView.postDelayed(this::offerBatteryOptimizationOnce, 900L);
         }
+    }
+
+    private void injectDarkTheme(WebView target) {
+        if (darkThemeScript == null || darkThemeScript.isEmpty()) {
+            return;
+        }
+        target.evaluateJavascript(darkThemeScript, null);
+    }
+
+    private String readAssetQuietly(String name) {
+        StringBuilder builder = new StringBuilder();
+        try (InputStream input = getAssets().open(name);
+             BufferedReader reader = new BufferedReader(
+                     new InputStreamReader(input, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                builder.append(line).append('\n');
+            }
+        } catch (IOException ignored) {
+            return "";
+        }
+        return builder.toString();
+    }
+
+    private void offerBatteryOptimizationOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || batteryDialogVisible) {
+            return;
+        }
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        if (powerManager.isIgnoringBatteryOptimizations(getPackageName())) {
+            return;
+        }
+        SharedPreferences prefs = getSharedPreferences(APP_PREFS, MODE_PRIVATE);
+        if (prefs.getBoolean(BATTERY_PROMPT_SHOWN, false)) {
+            return;
+        }
+        batteryDialogVisible = true;
+        prefs.edit().putBoolean(BATTERY_PROMPT_SHOWN, true).apply();
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.battery_title)
+                .setMessage(R.string.battery_body)
+                .setNegativeButton(R.string.not_now, (dialog, which) -> batteryDialogVisible = false)
+                .setPositiveButton(R.string.allow_background, (dialog, which) -> {
+                    batteryDialogVisible = false;
+                    Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                            .setData(Uri.parse("package:" + getPackageName()));
+                    try {
+                        startActivity(intent);
+                    } catch (ActivityNotFoundException ignored) {
+                        startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                                .setData(Uri.parse("package:" + getPackageName())));
+                    }
+                })
+                .setOnDismissListener(dialog -> batteryDialogVisible = false)
+                .show();
     }
 
     private void requestNotificationPermissionIfNeeded() {
